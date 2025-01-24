@@ -1,8 +1,10 @@
 package eventbus;
 
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.time.Duration.ofSeconds;
@@ -11,23 +13,26 @@ import static org.assertj.core.api.BDDAssertions.thenThrownBy;
 import static org.awaitility.Awaitility.await;
 
 
-class MultiThreadedEventBusTest {
+class MultiThreadedConflationEventBusTest {
 
     @Test
     void givenNoHandlerWhenPublishEventShouldThrowException() {
         // given
-        EventBus eventBus = new MultiThreadedEventBus(10);
+        EventBus eventBus = new MultiThreadedConflationEventBus(10);
 
         // expect
-        thenThrownBy(() -> eventBus.publishEvent(new BigDecimal(22)))
-                .isInstanceOf(NoHandlerException.class)
-                .hasMessage("No handler found for event class java.math.BigDecimal");
+        Awaitility.await()
+                .atMost(2, TimeUnit.SECONDS)
+                .untilAsserted(() -> thenThrownBy(() -> eventBus.publishEvent(new BigDecimal(22)))
+                        .isInstanceOf(NoHandlerException.class)
+                        .hasMessage("No handler found for event class java.math.BigDecimal"))
+        ;
     }
 
     @Test
     void givenAHandlerWhenPublishEventShouldInvokeIt() {
         // given
-        EventBus eventBus = new MultiThreadedEventBus(10);
+        EventBus eventBus = new MultiThreadedConflationEventBus(10);
         StringBuilder aStringBuilder = new StringBuilder();
         EventHandler<String> appendStringHandler = aStringBuilder::append;
         eventBus.addSubscriber(String.class, appendStringHandler);
@@ -44,7 +49,7 @@ class MultiThreadedEventBusTest {
     @Test
     void givenMultipleHandlersOfSameTypeWhenPublishEventShouldInvokeAll() {
         // given
-        EventBus eventBus = new MultiThreadedEventBus(10);
+        EventBus eventBus = new MultiThreadedConflationEventBus(10);
         StringBuilder aStringBuilder = new StringBuilder();
         eventBus.addSubscriber(String.class, s -> aStringBuilder.append("1"));
         eventBus.addSubscriber(String.class, s -> aStringBuilder.append("2"));
@@ -61,7 +66,7 @@ class MultiThreadedEventBusTest {
     @Test
     void givenMultipleHandlersOfDifferentTypesWhenPublishEventShouldInvokeTheCorrectOnes() {
         // given
-        EventBus eventBus = new MultiThreadedEventBus(10);
+        EventBus eventBus = new MultiThreadedConflationEventBus(10);
         AtomicInteger atomicInteger = new AtomicInteger();
         eventBus.addSubscriber(String.class, s -> atomicInteger.getAndIncrement());
         eventBus.addSubscriber(Integer.class, s -> atomicInteger.getAndIncrement());
@@ -75,14 +80,14 @@ class MultiThreadedEventBusTest {
 
         // then
         await().atMost(ofSeconds(2))
-                .untilAsserted(() -> assertThat(atomicInteger).hasValue(4));
+                .untilAsserted(() -> assertThat(atomicInteger).hasValue(3));
 
     }
 
     @Test
     void givenFilteredHandlersWhenPublishEventShouldApplyFiletering() {
         // given
-        EventBus eventBus = new MultiThreadedEventBus(10);
+        EventBus eventBus = new MultiThreadedConflationEventBus(10);
         AtomicInteger atomicInteger = new AtomicInteger();
         eventBus.addSubscriber(String.class, s -> atomicInteger.getAndIncrement());
         eventBus.addSubscriberForFilteredEvents(String.class, s -> atomicInteger.getAndIncrement(), e -> e.contains("filtered"));
@@ -95,7 +100,7 @@ class MultiThreadedEventBusTest {
 
         // then
         await().atMost(ofSeconds(2))
-                .untilAsserted(() -> assertThat(atomicInteger).hasValue(4));
+                .untilAsserted(() -> assertThat(atomicInteger).hasValue(2));
 
     }
 }
